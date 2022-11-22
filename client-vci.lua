@@ -7,7 +7,7 @@ do
     local f_frameid = ProtoField.uint16("VCI.frameid", "Frame Id", base.HEX)
     local f_canrsvd = ProtoField.uint16("VCI.cansvd", "CAN RSVD", base.HEX)
     local f_canid = ProtoField.uint16("VCI.canid", "CAN ID", base.HEX)
-    local f_candatalen = ProtoField.uint16("VCI.candatalen", "CAN Data Length", base.DEC)
+    local f_candatalen = ProtoField.uint16("VCI.candatalen", "CAN Data Length", base.HEX)
     local f_candata = ProtoField.bytes("VCI.candata", "CAN Data", base.SPACE)
 
     --这里把DT协议的全部字段都加到p_DT这个变量的fields字段里
@@ -16,6 +16,15 @@ do
     --这里是获取data这个解析器
     local data_dis = Dissector.get("data")
     
+    local function int16swap(num)
+        res=0
+        for var=2,1,-1 do
+            res=res*256+num%256
+            num=math.floor(num/256)
+        end
+        return res  
+    end
+
     local function DT_dissector(buf,pkt,root)
         --过滤目的端口
         if pkt.dst_port ~= 8183 then
@@ -36,7 +45,8 @@ do
         if v_framesize  > 2 then
             v_canrsvd = buf(4, 2)
             v_canid = buf(6, 2)
-            v_candatalen = buf(8, 1)
+            v_candatalen = buf(8, 2)
+            v_candatalen_d = int16swap(buf(8,2):uint())
             v_candata = buf(10, v_framesize - 8)
         end
 
@@ -58,7 +68,7 @@ do
         if v_framesize  > 2 then
             t:add(f_canrsvd, v_canrsvd)
             t:add(f_canid, v_canid)
-            t:add(f_candatalen, v_candatalen)
+            t:add(f_candatalen, v_candatalen):append_text(" ("..v_candatalen_d.." bytes)")
             t:add(f_candata, v_candata)
         end
         return true
