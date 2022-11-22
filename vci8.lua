@@ -13,9 +13,28 @@ do
     --协议的各个字段,server
     --协议的各个字段
     local f_sn = ProtoField.uint32("VCIS.sn","Serial Number", base.HEX)
+    local f_timestamp = ProtoField.uint32("VCIS.timestamp","Timestamp", base.HEX)
+    local f_timestamp_ns = ProtoField.uint32("VCIS.timestamp","Timestamp", base.HEX)
+    local f_framedlc  = ProtoField.uint32("VCIS.framedlc","framedlc", base.HEX)
+    local f_dlclen  = ProtoField.uint8("VCIS.dlclen","dlclen", base.HEX)
+    local f_timestamp_len = ProtoField.uint8("VCIS.timestamp_len","timestamp_len", base.HEX)
+
 
     --这里把DT协议的全部字段都加到p_DT这个变量的fields字段里
-    p_DT.fields = {f_framesize, f_frameid, f_data, f_canrsvd, f_canid, f_candatalen, f_candata, f_sn}    
+    p_DT.fields = {f_framesize,
+                   f_frameid,
+                   f_data,
+                   f_canrsvd,
+                   f_canid,
+                   f_candatalen,
+                   f_candata,
+                   f_sn,
+                   f_timestamp,
+                   f_timestamp_ns,
+                   f_framedlc,
+                   f_dlclen,
+                   f_timestamp_len}
+
     --这里是获取data这个解析器
     local data_dis = Dissector.get("data")
     
@@ -85,6 +104,24 @@ do
     local function DT_dissector_server(buf, pkt, root)
         local v_sn = buf(0,4)
         local v_sn_d = int32swap(buf(0, 4):uint())
+
+        local v_timestamp = buf(4, 4)
+        local v_timestamp_d = int32swap(buf(4, 4):uint())
+
+        local v_timestamp_ns = buf(8, 4)
+        local v_timestamp_ns_d = int32swap(buf(8, 4):uint())
+
+        local v_framedlc = buf(12, 2)
+        local v_framedlc_d = int16swap(buf(12, 2):uint())
+
+        local v_dlclen = buf(14, 1)
+        local v_dlclen_d = buf(14, 1):uint()
+        if v_dlclen_d == 0 then
+            v_dlclen_d = 1
+        end
+
+        local v_timestamp_len = buf(15, 1)
+        local v_timestamp_len_d = buf(15,1):uint()
    
         --现在知道是我的协议了，放心大胆添加Packet Details
         local t = root:add(p_DT,buf)
@@ -92,6 +129,15 @@ do
         pkt.cols.protocol = "VCI8"
         --这里是把对应的字段的值填写正确，只有t:add过的才会显示在Packet Details信息里. 所以在之前定义fields的时候要把所有可能出现的都写上，但是实际解析的时候，如果某些字段没出现，就不要在这里add
         t:add(f_sn,v_sn):append_text(" ("..v_sn_d..")")
+        t:add(f_timestamp, v_timestamp):append_text(" ("..v_timestamp_d..")")
+        t:add(f_timestamp_ns, v_timestamp_ns):append_text(" ("..v_timestamp_ns_d..")")
+        t:add(f_framedlc, v_framedlc):append_text(" ("..v_framedlc_d.." bytes)")
+        t:add(f_dlclen, v_dlclen):append_text(" ("..v_dlclen_d.." bytes)")
+        if v_timestamp_len_d == 4 then
+            t:add(f_timestamp_len, v_timestamp_len):append_text(" (time stamp type is uint32, unit is ms)")
+        else
+            t:add(f_timestamp_len, v_timestamp_len):append_text(" (time stamp type is uint64, unit is us)")
+        end
         return true
     end
 
