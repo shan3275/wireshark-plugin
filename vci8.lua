@@ -1,7 +1,7 @@
 do
     --协议名称为DT，在Packet Details窗格显示为Nselab.Zachary DT
     local p_DT = Proto("VCI8","KunYi VCI")
-    --协议的各个字段
+    --协议的各个字段,client 
     local f_framesize = ProtoField.uint16("VCI.framesize","Frame Size", base.DEC)
     --这里的base是显示的时候的进制，详细可参考https://www.wireshark.org/docs/wsdg_html_chunked/lua_module_Proto.html#lua_class_ProtoField
     local f_frameid = ProtoField.uint16("VCI.frameid", "Frame Id", base.HEX)
@@ -10,9 +10,12 @@ do
     local f_candatalen = ProtoField.uint16("VCI.candatalen", "CAN Data Length", base.HEX)
     local f_candata = ProtoField.bytes("VCI.candata", "CAN Data", base.SPACE)
 
+    --协议的各个字段,server
+    --协议的各个字段
+    local f_sn = ProtoField.uint32("VCIS.sn","Serial Number", base.HEX)
+
     --这里把DT协议的全部字段都加到p_DT这个变量的fields字段里
-    p_DT.fields = {f_framesize, f_frameid, f_data, f_canrsvd, f_canid, f_candatalen, f_candata}
-    
+    p_DT.fields = {f_framesize, f_frameid, f_data, f_canrsvd, f_canid, f_candatalen, f_candata, f_sn}    
     --这里是获取data这个解析器
     local data_dis = Dissector.get("data")
     
@@ -22,14 +25,19 @@ do
             res=res*256+num%256
             num=math.floor(num/256)
         end
+        return res
+    end
+
+    local function int32swap(num)
+        res=0
+        for var=4,1,-1 do
+            res=res*256+num%256
+            num=math.floor(num/256)
+        end
         return res  
     end
 
-    local function DT_dissector(buf,pkt,root)
-        --过滤目的端口
-        if pkt.dst_port ~= 8183 then
-            return false
-        end
+    local function DT_dissector_client(buf, pkt, root)
 
         local buf_len = buf:len();
         --先检查报文长度，太短的不是我的协议
@@ -71,6 +79,32 @@ do
             t:add(f_candatalen, v_candatalen):append_text(" ("..v_candatalen_d.." bytes)")
             t:add(f_candata, v_candata)
         end
+        return true    
+    end
+
+    local function DT_dissector_server(buf, pkt, root)
+        local v_sn = buf(0,4)
+        local v_sn_d = int32swap(buf(0, 4):uint())
+   
+        --现在知道是我的协议了，放心大胆添加Packet Details
+        local t = root:add(p_DT,buf)
+        --在Packet List窗格的Protocol列可以展示出协议的名称
+        pkt.cols.protocol = "VCI8"
+        --这里是把对应的字段的值填写正确，只有t:add过的才会显示在Packet Details信息里. 所以在之前定义fields的时候要把所有可能出现的都写上，但是实际解析的时候，如果某些字段没出现，就不要在这里add
+        t:add(f_sn,v_sn):append_text(" ("..v_sn_d..")")
+        return true
+    end
+
+    local function DT_dissector(buf,pkt,root)
+        --过滤目的端口
+        if pkt.dst_port == 8183 then
+            return DT_dissector_client(buf,pkt,root)
+        end
+
+        if pkt.src_port == 8183 then
+            return DT_dissector_server(buf,pkt,root)
+        end
+
         return true
     end
     
